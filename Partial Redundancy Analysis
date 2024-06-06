@@ -1,0 +1,153 @@
+setwd() #sets working directory
+library(vegan) #loads vegan package
+library(ggplot2) #loads ggplot2 package
+library(dplyr) #loads dplyr package
+
+#load in variable, explanatory and covariates. Then remove sample names
+explanatory_data.rda <- read.table("explanatory_data_rda.csv", header = TRUE, sep=";") #reads my csv in as a matrix, which is needed for the RDA
+typeof(explanatory_data.rda) #check to see if data is in the right format "double"
+#explanatory_data.rda already has its sample names removed
+data <- read.csv("field_collected_samples.csv", skip = 6, row.names = NULL, sep = ';', header=F) #load in fieldwork samples
+microbial_speciesrichness <- read.csv("microbial_speciesrichness.csv", header=TRUE) #loads in previously filtered speciesricheness
+rownames(microbial_speciesrichness) <- microbial_speciesrichness$X #sets rownames
+rownames(explanatory_data.rda) <- rownames(microbial_speciesrichness) #sets rownames
+env_data <- read.csv("env_data_samples_subset.csv", header=TRUE) #load in environmental covariates
+rownames(env_data) <- rownames(microbial_speciesrichness) #sets rownames
+selected_rows <- microbial_speciesrichness[!microbial_speciesrichness$X %in% data$V1, ] #select the rows that aren't sampled in the field
+microbial_speciesrichness <- microbial_speciesrichness[microbial_speciesrichness$X %in% data$V1, ] #select the rows that are sampled in the field
+explanatory_data.rda <- explanatory_data.rda[rownames(explanatory_data.rda) %in% rownames(microbial_speciesrichness),] #same as line above
+sample_data <- read.csv("sample_data_ordered.csv") #loads in samples data // needed for European and North American PRAs, to filter for range
+rownames(sample_data) <- sample_data$sample #sets rownames
+sample_data <- sample_data[rownames(sample_data) %in% rownames(microbial_speciesrichness), ] #selects the samples the are field-collected
+
+env_data$sample <- NULL #remove sample column
+env_data <- env_data[rownames(env_data) %in% rownames(microbial_speciesrichness),] #selects the samples that were field-collected
+
+env_data <- as.matrix(env_data) #transforms data into a matrix
+typeof(env_data) #make sure type = "integer"
+microbial_speciesrichness$X <- NULL #removes sample column
+microbial_speciesrichness <- data.matrix(microbial_speciesrichness) #transforms data
+typeof(microbial_speciesrichness) #make sure type = "double"
+explanatory_data.rda <- explanatory_data.rda[,-38] #removes the latitude column from the explanatory data
+
+#make a dataset with colours representing each kingdom in order to later colour the dots in the ordiplot
+microbial_taxa <- read.csv("2023-11-22_ragweed_metagenomics_kraken_NCBInt_microbial_species_filtered_overlap_taxonomyData.csv") #I need the taxa in order to give the microbes in the figure a certain colour
+filter_vector <- colnames(microbial_speciesrichness) #assigns colnames of microbial_speciesrichness to a new vector
+filtered_microbial_taxa <- microbial_taxa[microbial_taxa$s %in% filter_vector, ] #selects all the samples in microbial_taxa that overlap with the microbes in microbial_speciesrichness
+non_filtered_microbial_taxa <- microbial_taxa[!(microbial_taxa$s %in% filter_vector), ] #selects all the samples that aren't in microbial_speciesrichness // I needed this in order to easily look up which microbes where differently named
+microbial_taxa_RDA <- filtered_microbial_taxa[,c(2,8)] #puts the columns for kingdom and speciesname in a new dataframe
+microbial_taxa_RDA$colour <- NA #makes a new column names "colour"
+microbial_taxa_RDA[which(microbial_taxa_RDA$sk == "Bacteria"), ]$colour = "red" #assigns "red" to all the rows which have "Bacteria" in the kingdom row
+microbial_taxa_RDA[which(microbial_taxa_RDA$sk == "Eukaryota"), ]$colour = "green" #assigns "green" to all the rows which have "Eukaryota" in the kingdom row
+microbial_taxa_RDA[which(microbial_taxa_RDA$sk == "Archaea"), ]$colour = "blue" #assigns "blue" to all the rows which have "Archaea" in the kingdom row
+
+#run partial redundancy analysis
+explanatory_data.rda$continent <- NULL #remove the continent column (if its there)
+typeof(microbial_speciesrichness) #must be "double"
+explanatory_data.rda <- data.matrix(explanatory_data.rda)
+typeof(explanatory_data.rda) #must be "double"
+typeof(env_data) #must be "integer"
+
+PRA <- rda(microbial_speciesrichness, explanatory_data.rda, env_data) #Runs PRA
+
+#plot it out
+model <- ordiplot(PRA, type = "none", scaling = 2, cex=10, xlab = "RDA1", ylab = "RDA2", cex.lab = 1.25) #makes an ordiplot of your RDA, in order to visualize and enable to more clearly analyse your data
+points(PRA, col="darkgrey", cex=1) #puts the samples as darkgrey dots on the ordiplot
+points(PRA, dis="sp", col=microbial_taxa_RDA$colour) #puts the microbes in the orhttp://127.0.0.1:20147/graphics/plot_zoom_png?width=1536&height=807diplot with the colours "red""green" and "blue" according to their kingdom
+#text(spec.rda, dis="sp", col="blue") #puts microbe names next to their datapoints // makes figure hard to read
+text(PRA, dis="bp", col="black") #puts in arrows with the names of the vectors
+
+summary(PRA) #summarises your data, allowing you to see the result of your PRA
+vif.cca(PRA) #ommit any values greater than 20
+RsquareAdj(PRA)$adj.r.squared #extracts R² adjusted
+anova.cca(PRA, step=1000) #calculates p-value
+
+
+#perform PRA for Europe
+explanatory_data.PRA <- explanatory_data.rda
+explanatory_data.PRA <- as.data.frame(explanatory_data.PRA)
+explanatory_data.PRA$continent <- sample_data$continent #add continent column to explanatory_data.PRA
+
+explanatory_data.PRA <- explanatory_data.PRA %>%
+  mutate(continent = recode(continent, 'Europe(Admixed)' = 'Europe')) #replaces "Europe(Admixed)" with "Europe"
+explanatory_data.europe <- explanatory_data.PRA[explanatory_data.PRA$continent=="Europe",]  #selects the samples from Europe and puts them in a new data frame
+explanatory_data.europe$continent <- NULL #removes the continent column
+explanatory_data.europe <- as.matrix(explanatory_data.europe) #transforms data
+typeof(explanatory_data.europe) #make sure its a "double"
+#select the European samples for the variable data
+species_data.europe <- read.csv("microbial_speciesrichness.csv", header=TRUE) #create a dataset with the speciesrichness
+rownames(species_data.europe) <- species_data.europe$X
+env_data.europe <- read.csv("env_data_samples_subset.csv", header=TRUE)
+rownames(env_data.europe) <- species_data.europe$X
+species_data.europe <- species_data.europe[rownames(species_data.europe) %in% rownames(microbial_speciesrichness), ]
+species_data.europe$X <- NULL
+species_data.europe$continent <- explanatory_data.PRA$continent  #adds the continents to the dataset
+species_data.europe <- species_data.europe[species_data.europe$continent=="Europe",] #select the samples from Europe
+species_data.europe$continent <- NULL #removes continent column from dataset
+species_data.europe <- as.matrix(species_data.europe)
+typeof(species_data.europe) #should be "double"
+#select the European samples for the environmental data
+env_data.europe$sample <- NULL
+env_data.europe <- env_data.europe[rownames(env_data.europe) %in% rownames(microbial_speciesrichness), ]
+
+env_data.europe$continent <- explanatory_data.PRA$continent
+env_data.europe <- env_data.europe[env_data.europe$continent=="Europe",]
+env_data.europe$continent <- NULL
+env_data.europe <- as.matrix(env_data.europe)
+typeof(env_data.europe) #should be integer
+
+#run PRA for Europe
+spec.PRA.europe <- rda(species_data.europe, explanatory_data.europe, env_data.europe) # runs the rda for only the European samples
+#plot out the Europen PRA
+model <- ordiplot(spec.PRA.europe, type = "none", scaling = 1, cex=10, xlab = "RDA1", ylab = "RDA2", cex.lab = 1.25) #makes an ordiplot of your RDA, in order to visualize and enable to more clearly analyse your data
+points(spec.PRA.europe, col="darkgrey", cex=1) #puts the samples as darkgrey dots on the ordiplot
+points(spec.PRA.europe, dis="sp", col=microbial_taxa_RDA$colour) #puts the microbes in the orhttp://127.0.0.1:20147/graphics/plot_zoom_png?width=1536&height=807diplot with the colours "red""green" and "blue" according to their kingdom
+#text(spec.rda, dis="sp", col="blue")
+text(spec.PRA.europe, dis="bp", col="black") #puts in arrows with the names of the vectors
+
+summary(spec.PRA.europe)
+RsquareAdj(spec.PRA.europe)$adj.r.squared
+anova.cca(spec.PRA.europe, step=1000) 
+
+
+#perform PRA for North America
+explanatory_data.PRA <- explanatory_data.rda
+explanatory_data.PRA <- as.data.frame(explanatory_data.PRA)
+explanatory_data.PRA$continent <- sample_data$continent
+explanatory_data.northamerica <- explanatory_data.PRA[explanatory_data.PRA$continent=="North.America",]  #select the samples from Europe
+explanatory_data.northamerica$continent <- NULL
+explanatory_data.northamerica <- as.matrix(explanatory_data.northamerica)
+typeof(explanatory_data.northamerica) #should be "double"
+#select the North American samples for the variable data
+species_data.northamerica <- read.csv("microbial_speciesrichness.csv", header=TRUE) #create a dataset with the speciesrichness
+rownames(species_data.northamerica) <- species_data.northamerica$X
+species_data.northamerica <- species_data.northamerica[rownames(species_data.northamerica) %in% rownames(microbial_speciesrichness),]
+species_data.northamerica$continent <- sample_data$continent  #adds the continents to the dataset
+species_data.northamerica <- species_data.northamerica[species_data.northamerica$continent=="North.America",] #select the samples from Europe
+species_data.northamerica$continent <- NULL #removes continent column from dataset
+species_data.northamerica$X <- NULL
+species_data.northamerica <- as.matrix(species_data.northamerica)
+typeof(species_data.northamerica) #should be "double"
+#select the North American samples for the environmental data
+env_data.northamerica <- read.csv("env_data_samples_subset.csv", header=TRUE)
+rownames(env_data.northamerica) <- env_data.northamerica$sample
+env_data.northamerica <- env_data.northamerica[rownames(env_data.northamerica) %in% rownames(microbial_speciesrichness),]
+env_data.northamerica$continent <- sample_data$continent
+env_data.northamerica <- env_data.northamerica[env_data.northamerica$continent=="North.America",]
+env_data.northamerica$continent <- NULL
+env_data.northamerica$sample <- NULL
+env_data.northamerica <- as.matrix(env_data.northamerica)
+typeof(env_data.northamerica) #should be "integer"
+
+#run PRA
+spec.rda.northamerica <- rda(species_data.northamerica, explanatory_data.northamerica, env_data.northamerica) # runs the rda for only the European samples
+#plot out the North American PRA
+model <- ordiplot(spec.rda.northamerica, type = "none", scaling = 1, cex=10, xlab = "RDA1", ylab = "RDA2", cex.lab = 1.25) #makes an ordiplot of your RDA, in order to visualize and enable to more clearly analyse your data
+points(spec.rda.northamerica, col="darkgrey", cex=1) #puts the samples as darkgrey dots on the ordiplot
+points(spec.rda.northamerica, dis="sp", col=microbial_taxa_RDA$colour) #puts the microbes in the ordiplot with the colours "red""green" and "blue" according to their kingdom
+#text(spec.rda, dis="sp", col="blue")
+text(spec.rda.northamerica, dis="bp", col="black") #puts in arrows with the names of the vectors
+
+summary(spec.rda.northamerica)
+RsquareAdj(spec.rda.northamerica)$adj.r.squared
+anova.cca(spec.rda.northamerica, step=1000) 

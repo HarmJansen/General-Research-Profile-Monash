@@ -1,0 +1,181 @@
+setwd()
+library(vegan) #loads vegan package
+library(ggplot2)
+library(car)
+library(dplyr)
+library(ggsignif)
+library(rstatix)
+library(ggpubr)
+
+#load in field-collected microbial data and filter for over and underrepresented microbes
+microbial_speciesrichness <- read.csv("microbial_speciesrichness.csv", header=TRUE) #loads in speciesricheness
+rownames(microbial_speciesrichness) <- microbial_speciesrichness$X #give the columnname the samplenames
+right_samples <- read.csv("field_collected_samples.csv", skip = 6, row.names = NULL, sep = ';', header=F) #load in fieldwork samples
+microbial_speciesrichness <- microbial_speciesrichness[microbial_speciesrichness$X %in% right_samples$V1, ] #select the rows that are sampled in the field
+typeof(microbial_speciesrichness)
+rnames <- rownames(microbial_speciesrichness)
+cnames <- colnames(microbial_speciesrichness)
+microbial_speciesrichness$X <- NULL #removes the X (samples) column
+all_numeric <- all(sapply(microbial_speciesrichness, is.numeric))
+if (!all_numeric) {
+  stop("Not all elements in the list are numeric.")
+}
+df <- as.data.frame(microbial_speciesrichness)
+df[] <- lapply(df, as.double)
+class(df)
+is.data.frame(df)
+str(df)
+microbial_speciesrichness <- df
+
+#calculate shannon index
+Shannon_fieldwork <- diversity(microbial_speciesrichness, index = "shannon")
+
+Shannon <- as.data.frame(Shannon_fieldwork)
+
+library(stringr) #needed for replacing Europe(Admixed) with Europe later
+sample_data <-read.csv("sample_data_ordered.csv", header = TRUE)  #read in the ordered sample_data
+sample_data <- sample_data[sample_data$sample %in% right_samples$V1, ]
+
+rang = as.data.frame(sample_data$continent)  #new data.frame with just the continent data
+colnames(rang) <- "continent" #replace colname with 'continent'
+rang$continent <- str_replace(rang$continent, "Europe\\(Admixed\\)", "Europe") #replacing Europe(Admixed) with Europe
+rownames(rang) <- rownames(microbial_speciesrichness)
+rang$continent <- gsub("Europe", 1, rang$continent) #replaces "Europe" with the number 1
+rang$continent <- gsub("North.America", 0, rang$continent) #replaces "North.America" with the number 0
+rang <- as.numeric(as.matrix(rang))
+typeof(rang)
+
+#shannon diversity
+data_range <- as.data.frame(rang)
+data_range$shannon <- Shannon
+
+selected_rows_europe <- data_range[data_range$rang == 1, ]
+selected_rows_north  <- data_range[data_range$rang == 0, ]
+selected_rows_europe$rang <- NULL
+selected_rows_north$rang <- NULL
+selected_rows_europe <- as.matrix(selected_rows_europe)
+selected_rows_north <- as.matrix(selected_rows_north)
+
+Shannon_fieldwork_Europe <- selected_rows_europe
+Shannon_fieldwork_North.America <- selected_rows_north
+
+#load in common garden collected microbial data and filter for over and underrepresented microbes
+microbial_speciesrichness <- read.csv("microbial_speciesrichness.csv", header=TRUE) #loads in speciesricheness
+rownames(microbial_speciesrichness) <- microbial_speciesrichness$X #give the columnname the samplenames
+right_samples <- read.csv("garden_collected_samples.csv", skip = 1, row.names = NULL, sep = ';', header=F) #load in garden experiment samples
+microbial_speciesrichness <- microbial_speciesrichness[microbial_speciesrichness$X %in% right_samples$V1, ] #select the rows that are sampled in the field
+typeof(microbial_speciesrichness)
+rnames <- rownames(microbial_speciesrichness)
+cnames <- colnames(microbial_speciesrichness)
+microbial_speciesrichness$X <- NULL #removes the X (samples) column
+all_numeric <- all(sapply(microbial_speciesrichness, is.numeric))
+if (!all_numeric) {
+  stop("Not all elements in the list are numeric.")
+}
+df <- as.data.frame(microbial_speciesrichness)
+df[] <- lapply(df, as.double)
+class(df)
+is.data.frame(df)
+str(df)
+microbial_speciesrichness <- df
+
+#calculate shannon index
+Shannon_garden <- diversity(microbial_speciesrichness, index = "shannon")
+
+Shannon <- as.data.frame(Shannon_garden)
+
+library(stringr) #needed for replacing Europe(Admixed) with Europe later
+sample_data <-read.csv("sample_data_ordered.csv", header = TRUE)  #read in the ordered sample_data
+sample_data <- sample_data[sample_data$sample %in% right_samples$V1, ]
+
+rang = as.data.frame(sample_data$continent)  #new data.frame with just the continent data
+colnames(rang) <- "continent" #replace colname with 'continent'
+rang$continent <- str_replace(rang$continent, "Europe\\(Admixed\\)", "Europe") #replacing Europe(Admixed) with Europe
+rownames(rang) <- rownames(microbial_speciesrichness)
+rang$continent <- gsub("Europe", 1, rang$continent) #replaces "Europe" with the number 1
+rang$continent <- gsub("North.America", 0, rang$continent) #replaces "North.America" with the number 0
+rang <- as.numeric(as.matrix(rang))
+typeof(rang)
+
+#shannon diversity
+data_range <- as.data.frame(rang)
+data_range$shannon <- Shannon
+
+selected_rows_europe <- data_range[data_range$rang == 1, ]
+selected_rows_north  <- data_range[data_range$rang == 0, ]
+selected_rows_europe$rang <- NULL
+selected_rows_north$rang <- NULL
+selected_rows_europe <- as.matrix(selected_rows_europe)
+selected_rows_north <- as.matrix(selected_rows_north)
+
+Shannon_garden_Europe <- selected_rows_europe
+Shannon_garden_North.America <- selected_rows_north
+
+#plot data
+shannon_list <- list(
+  Shannon_fieldwork,
+  Shannon_fieldwork_Europe,
+  Shannon_fieldwork_North.America,
+  Shannon_garden,
+  Shannon_garden_Europe,
+  Shannon_garden_North.America
+)
+# Calculate means and standard errors
+data_summary <- data.frame(
+  Group = c("Shannon_fieldwork", "Shannon_fieldwork_Europe", "Shannon_fieldwork_North.America", 
+            "Shannon_garden", "Shannon_garden_Europe", "Shannon_garden_North.America"),
+  Mean = sapply(shannon_list, mean),
+  SE = sapply(shannon_list, function(x) sd(x) / sqrt(length(x)))
+)
+
+# Plot using ggplot2
+ggplot(data_summary, aes(x = Group, y = Mean)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = Mean - SE, ymax = Mean + SE), width = 0.2) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Mean and Error Bars for Shannon Indices with MWU test",
+       x = "Group",
+       y = "Mean Shannon Index")
+
+
+
+#Shannon
+# Combine data into a data frame
+data <- data.frame(
+  value = c(Shannon_fieldwork, Shannon_fieldwork_Europe, Shannon_fieldwork_North.America, 
+            Shannon_garden, Shannon_garden_Europe, Shannon_garden_North.America),
+  group = factor(rep(c("Shannon_fieldwork", "Shannon_fieldwork_Europe", "Shannon_fieldwork_North.America", 
+                       "Shannon_garden", "Shannon_garden_Europe", "Shannon_garden_North.America"),
+                     times = c(length(Shannon_fieldwork), length(Shannon_fieldwork_Europe), 
+                               length(Shannon_fieldwork_North.America), length(Shannon_garden), 
+                               length(Shannon_garden_Europe), length(Shannon_garden_North.America))))
+)
+
+# Perform pairwise comparisons using rstatix
+pairwise_results <- data %>%
+  pairwise_wilcox_test(value ~ group, p.adjust.method = "none")
+
+# Filter for the specific significant comparison
+significant_comparisons <- pairwise_results %>%
+  filter(group1 == "Shannon_garden_Europe" & group2 == "Shannon_garden_North.America" & p < 0.05) %>%
+  select(group1, group2, p)
+# Calculate means and standard errors
+data_summary <- data %>%
+  group_by(group) %>%
+  summarize(Mean = mean(value), SE = sd(value) / sqrt(n()), .groups = 'drop')
+
+# Add y-positions for annotations to avoid overlapping
+significant_comparisons <- significant_comparisons %>%
+  mutate(y.position = max(data_summary$Mean) + seq(0.2, by = 0.2, length.out = n()))
+
+# Plot using ggplot2
+ggplot(data_summary, aes(x = group, y = Mean)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = Mean - SE, ymax = Mean + SE), width = 0.2) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Mean and Error Bars for Shannon Indices with MWU test",
+       x = "Group",
+       y = "Mean Shannon Index") +
+  stat_pvalue_manual(significant_comparisons, label = "p", 
+                     y.position = "y.position")
+

@@ -1,0 +1,32 @@
+setwd() #sets working directory
+library(ggplot2)
+library(tidyverse)
+library(car)
+library(dplyr)
+
+go_11c <- read.table("hb11c.annot.topGO.out.txt", header = TRUE, sep = "\t") #creates dataframe with GO term data from hb.chr11c
+go_17b <- read.table("hb17b.annot.topGO.out.txt", header = TRUE, sep = "\t") #creates dataframe with GO term data from hb.chr17b
+
+# Create a dot plot // make sure to adjust code for different dataset
+ggplot(data = go_11c, aes(x = reorder(Term, -classicFisher), y = -log10(classicFisher), color = ontology, size = Annotated)) +
+  geom_point() +
+  coord_flip() +  # Flip the axes to make the bars horizontal
+  scale_size_continuous(range = c(1, 10)) +  # Adjust the range of dot sizes as needed
+  labs(x = "GO Term", y = "-log10(p-value)", color = "Ontology", size = "Annotated") +
+  ggtitle("Enriched GO Terms hb.11c") +
+  theme_minimal() +  # Customize the theme if needed
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))  # Rotate x-axis labels for better readability
+
+#make subset of biological processes (or any other subset)
+go_17b_bp <- subset(go_17b, ontology == "BP")
+go_11c_bp <- subset(go_11c, ontology == "BP")
+
+# Create a dot plot // make sure to adjust code for different dataset
+ggplot(data = go_11c, aes(x = reorder(Term, -classicFisher), y = -log10(classicFisher), size = Annotated)) +
+  geom_point(color = "blue") +  # Set dot color to blue
+  coord_flip() +  # Flip the axes to make the bars horizontal
+  scale_size_continuous(range = c(2, 8)) +  # Adjust the range of dot sizes as needed
+  labs(x = "GO Term", y = "-log10(p-value)", size = "Annotation") +
+  ggtitle("Enriched Biological Process (BP) Terms hb.11c") +
+  theme_minimal() +  # Customize the theme if needed
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))  # Rotate x-axis labels for better readability

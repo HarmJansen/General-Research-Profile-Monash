@@ -1,0 +1,212 @@
+setwd()
+library(ggplot2)
+library(tidyverse)
+library(car)
+library(dplyr)
+
+#load in microbial data and filter for over and underrepresented microbes
+#microbial_speciesrichness <- read.csv("microbial_speciesrichness.csv", header=TRUE) #loads in speciesricheness
+#load in the speciesrichness from filter_for_fieldsamples.R
+#for field collected samples
+data <- read.csv("field_collected_samples.csv", skip = 6, row.names = NULL, sep = ';', header=F) #load in new dataset
+microbial_speciesrichness <- read.csv("microbial_speciesrichness.csv", header=TRUE) #loads in previously filtered speciesricheness
+rownames(microbial_speciesrichness) <- microbial_speciesrichness$X
+hbs <- read.table("explanatory_data_rda.csv", header = TRUE, sep=";") #reads my csv in as a matrix, which is needed for the RDA
+rownames(hbs) <- rownames(microbial_speciesrichness)
+selected_rows <- microbial_speciesrichness[!microbial_speciesrichness$X %in% data$V1, ] #select the rows that aren't sampled in the field
+microbial_speciesrichness <- microbial_speciesrichness[microbial_speciesrichness$X %in% data$V1, ] #select the rows that are sampled in the field
+
+rownames(microbial_speciesrichness) <- microbial_speciesrichness$X #give the columnname the samplenames
+microbial_speciesrichness$X <- NULL #removes the X (samples) column
+
+microbial_presence <- microbial_speciesrichness %>% mutate_if(is.numeric, ~1 * (. != 0)) #transmute data in presence / absence
+
+# Calculate the percentage of non-zero values for each column
+percentages <- colMeans(microbial_presence)
+
+# Identify columns where the percentage falls below 10% or above 90%
+columns_to_keep <- which(percentages >= 0.10 & percentages <= 0.90)
+
+# Subset the microbial_presence dataframe to keep only the selected columns
+microbial_presence <- microbial_presence[, columns_to_keep]
+
+
+# PC1 and 2 of the covariance matrix (generated for GWAS)
+pc12 = as.data.frame(read.table("ragweed_GWAS_gemma_covData.txt", header = T)) #load in Vanessa's pc data
+pc12[,c(1,5,6,7,8,9)] = NULL #removes columns we don't need
+pc12 <- data.frame(lapply(pc12, function(x) gsub("_", "-", x)))
+rownames(pc12) <- pc12$Sample
+indices <- rownames(microbial_presence)
+pc12 <- pc12[indices,]
+pc12 <- na.omit(pc12)
+indices <- rownames(pc12)
+pc12$Sample <- NULL
+microbial_presence <- microbial_presence[indices,]
+pc12$PC1 <- as.numeric(pc12$PC1)
+pc12$PC2 <- as.numeric(pc12$PC2)
+
+#c12 = as.data.frame(eigen(read.table("harm-samps.pruned.nogenes.100k.cov.txt"))$vectors[, c(1, 2)])
+#colnames(pc12) = c("PC1", "PC2")
+#pc12 <- as.matrix(pc12)
+pc12 <- data.frame(lapply(pc12, as.numeric))
+str(pc12)
+typeof(pc12)
+
+
+# ranges
+library(stringr) #needed for replacing Europe(Admixed) with Europe later
+sample_data <-read.csv("sample_data_ordered.csv", header = TRUE)  #read in the ordered sample_data
+rownames(sample_data) <- sample_data$sample
+sample_data <- sample_data[indices,]
+rang = as.data.frame(sample_data$continent)  #new data.frame with just the continent data
+colnames(rang) <- "continent" #replace colname with 'continent'
+rang$continent <- str_replace(rang$continent, "Europe\\(Admixed\\)", "Europe") #replacing Europe(Admixed) with Europe
+rownames(rang) <- rownames(microbial_presence)
+rang$continent <- gsub("Europe", 1, rang$continent) #replaces "Europe" with the number 1
+rang$continent <- gsub("North.America", 0, rang$continent) #replaces "North.America" with the number 0
+rang <- as.numeric(as.matrix(rang))
+typeof(rang)
+
+# haploblock data
+#hbs <- read.table("explanatory_data_rda.csv", header = TRUE, sep=";") #reads my csv in as a matrix, which is needed for the RDA
+#rownames(hbs) <- rownames(microbial_speciesrichness)
+#load in hbs in filter_for_fieldsamples.R
+hbs <- hbs[indices,]
+hbs$hb.chr16b <- NULL
+hbs$hb.chr18c <- NULL
+hbs$latitude <- NULL
+hbs <- as.matrix(hbs)
+typeof(hbs)
+
+#phen = cbind(phen, pc1X.Candida._aurisphen = cbind(phen, pc12)
+microbial_presence <- as.matrix(microbial_presence) #microbial presence needs to be converted into "double"
+typeof(microbial_presence)
+phen = cbind(microbial_presence, rang)
+phen = cbind(phen, pc12)
+
+#phen.hbs = merge(phen, hbs, by.x = "row.names", by.y = "sample")
+phen.hbs = cbind(phen, hbs)
+# columns:
+# 1-264 phenotypes
+# 265   range
+# 266-267 PC1-2
+# 268-302 haploblocks
+
+# make results data frame
+hb.assoc = as.numeric(as.data.frame(matrix(nrow = 0, ncol = 3)))
+typeof(hb.assoc)
+phen.hbs = as.data.frame(phen.hbs)
+typeof(phen.hbs)
+#write.csv(phen.hbs, "presence-absence.csv")
+# run associations
+for (i in 1:264){  #loops over microbes
+  for (j in 1:35){   #loops over haploblocks
+    
+    res = glm(data = phen.hbs, phen.hbs[, i + 0] ~ phen.hbs[, j + 267] + phen.hbs[,266] + phen.hbs[,267] + phen.hbs[,265], family = binomial) #runs GLM
+    res.anova = Anova(res, type = 3)  #tests for significance association
+    res.end = c(colnames(phen.hbs)[i + 0], colnames(phen.hbs)[j + 267], res.anova[1,3])  #makes dataframe with the name of microbe and haploblock with the p-value
+    if(res.anova[1,3] < 0.05/9240){ hb.assoc = rbind(hb.assoc, as.matrix(t(res.end))) }  #binds significant associations to hb.assoc
+    if(res.anova[1,3] < 0.05/9240){print(summary(res)$coef)}  #prints coefficient part of summary, to see direction of association
+  }
+}
+
+
+#Run the same for garden experiment
+data <- read.csv("garden_collected_samples.csv", skip = 1, row.names = NULL, sep = ';', header=F) #load in new dataset
+microbial_speciesrichness <- read.csv("microbial_speciesrichness.csv", header=TRUE) #loads in previously filtered speciesricheness
+rownames(microbial_speciesrichness) <- microbial_speciesrichness$X
+hbs <- read.table("explanatory_data_rda.csv", header = TRUE, sep=";") #reads my csv in as a matrix, which is needed for the RDA
+rownames(hbs) <- rownames(microbial_speciesrichness)
+selected_rows <- microbial_speciesrichness[!microbial_speciesrichness$X %in% data$V1, ] #select the rows that aren't sampled in the field
+microbial_speciesrichness <- microbial_speciesrichness[microbial_speciesrichness$X %in% data$V1, ] #select the rows that are sampled in the field
+
+rownames(microbial_speciesrichness) <- microbial_speciesrichness$X #give the columnname the samplenames
+microbial_speciesrichness$X <- NULL #removes the X (samples) column
+
+microbial_presence <- microbial_speciesrichness %>% mutate_if(is.numeric, ~1 * (. != 0)) #transmute data in presence / absence
+
+# Calculate the percentage of non-zero values for each column
+percentages <- colMeans(microbial_presence)
+
+# Identify columns where the percentage falls below 10% or above 90%
+columns_to_keep <- which(percentages >= 0.10 & percentages <= 0.90)
+
+# Subset the microbial_presence dataframe to keep only the selected columns
+microbial_presence <- microbial_presence[, columns_to_keep]
+
+
+# PC1 and 2 of the covariance matrix (generated for GWAS)
+pc12 = as.data.frame(read.table("ragweed_GWAS_gemma_covData.txt", header = T)) #load in Vanessa's pc data
+pc12[,c(1,5,6,7,8,9)] = NULL #removes columns we don't need
+pc12 <- data.frame(lapply(pc12, function(x) gsub("_", "-", x)))
+rownames(pc12) <- pc12$Sample
+indices <- rownames(microbial_presence)
+pc12 <- pc12[indices,]
+pc12 <- na.omit(pc12)
+indices <- rownames(pc12)
+pc12$Sample <- NULL
+microbial_presence <- microbial_presence[indices,]
+pc12$PC1 <- as.numeric(pc12$PC1)
+pc12$PC2 <- as.numeric(pc12$PC2)
+
+#c12 = as.data.frame(eigen(read.table("harm-samps.pruned.nogenes.100k.cov.txt"))$vectors[, c(1, 2)])
+#colnames(pc12) = c("PC1", "PC2")
+#pc12 <- as.matrix(pc12)
+pc12 <- data.frame(lapply(pc12, as.numeric))
+str(pc12)
+typeof(pc12)
+
+
+# ranges
+library(stringr) #needed for replacing Europe(Admixed) with Europe later
+sample_data <-read.csv("sample_data_ordered.csv", header = TRUE)  #read in the ordered sample_data
+rownames(sample_data) <- sample_data$sample
+sample_data <- sample_data[indices,]
+rang = as.data.frame(sample_data$continent)  #new data.frame with just the continent data
+colnames(rang) <- "continent" #replace colname with 'continent'
+rang$continent <- str_replace(rang$continent, "Europe\\(Admixed\\)", "Europe") #replacing Europe(Admixed) with Europe
+rownames(rang) <- rownames(microbial_presence)
+rang$continent <- gsub("Europe", 1, rang$continent) #replaces "Europe" with the number 1
+rang$continent <- gsub("North.America", 0, rang$continent) #replaces "North.America" with the number 0
+rang <- as.numeric(as.matrix(rang))
+typeof(rang)
+
+# haploblock data
+hbs <- hbs[indices,]
+hbs$hb.chr16b <- NULL
+hbs$hb.chr18c <- NULL
+hbs$latitude <- NULL
+hbs <- as.matrix(hbs)
+typeof(hbs)
+
+#phen = cbind(phen, pc1X.Candida._aurisphen = cbind(phen, pc12)
+microbial_presence <- as.matrix(microbial_presence) #microbial presence needs to be converted into "double"
+typeof(microbial_presence)
+phen = cbind(microbial_presence, rang)
+phen = cbind(phen, pc12)
+
+#phen.hbs = merge(phen, hbs, by.x = "row.names", by.y = "sample")
+phen.hbs = cbind(phen, hbs)
+# columns:
+# 1-333 phenotypes
+# 334   range
+# 335-336 PC1-2
+# 337-371 haploblocks
+
+# make results data frame
+hb.assoc = as.numeric(as.data.frame(matrix(nrow = 0, ncol = 3)))
+typeof(hb.assoc)
+phen.hbs = as.data.frame(phen.hbs)
+typeof(phen.hbs)
+#write.csv(phen.hbs, "presence-absence.csv")
+# run associations
+for (i in 1:333){
+  for (j in 1:35){
+    
+    res = glm(data = phen.hbs, phen.hbs[, i + 0] ~ phen.hbs[, j + 336] + phen.hbs[,335] + phen.hbs[,336], family = binomial)
+    res.anova = Anova(res, type = 3)
+    res.end = c(colnames(phen.hbs)[i + 0], colnames(phen.hbs)[j + 336], res.anova[1,3]) 
+    if(res.anova[1,3] < 0.05/11655){ hb.assoc = rbind(hb.assoc, as.matrix(t(res.end))) }
+    if(res.anova[1,3] < 0.05/9240){print(summary(res)$coef)}
+  }
+}

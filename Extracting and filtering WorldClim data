@@ -1,0 +1,39 @@
+setwd() #sets working directory
+
+# get WorldClim variables for each sample
+library(raster)
+library(dplyr)
+library(tidyr)
+
+# read in metadata (you should already have this file I think)
+meta = read.table("samples-meta-443.txt", header = F)
+colnames(meta) = c("sample", "pop", "subrange", "range", "lat", "lon")
+
+# extract bioclimatic variables for each pair of latitudes and longitudes
+wcbio = getData("worldclim", var = "bio", res = 2.5)
+meta = cbind(meta, raster::extract(wcbio, meta[, c("lon", "lat")]))
+
+#Remove the "pop" "range" "subrange" "lat" and "long" columns from the meta file
+meta$pop <- NULL
+meta$subrange <- NULL
+meta$range <- NULL
+meta$lat <- NULL
+meta$lon <- NULL
+
+#filter for the samples needed using common_sample_ids
+microbial_speciesrichness <- read.csv("microbial_speciesrichness.csv", header=TRUE) #loads in abundance data for right samples
+meta_filtered <- meta[meta$sample %in% microbial_speciesrichness$X, ] #makes new dataframe only with overlapping samples
+write.csv(meta_filtered, "samples-meta-filtered.csv", row.names = F)
+env_data_samples <- read.csv("samples-meta-filtered.csv", header = T)
+
+#run pairs.panels function to make correlation plot to filter out overcorrelated vectors
+library(psych) #library needed for pairs.panels function
+env_data_pairspanel <- env_data_samples
+env_data_pairspanel$sample <- NULL #removes sample column, needed for running function
+pairs.panels(env_data_pairspanel) #makes correlation plot
+
+#manually look for overly correlated functions and keep the ones with <0.6 correlation
+
+#remove unwanted environmental vectors
+env_data_samples[,c(4,5,6,7,10,11,12,14,15,17,18,19,20)] <- NULL #removes following vectors: bio3, 4, 5, 6, 9, 10, 11, 13, 14, 16, 17, 18 and 19
+write.csv(env_data_samples,"env_data_samples_subset.csv", row.names = F)

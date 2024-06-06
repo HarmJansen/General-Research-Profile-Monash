@@ -1,0 +1,119 @@
+setwd() #set your working directory
+
+#Redundancy Analysis (RDA)
+library(vegan) #loads vegan package
+library(ggplot2) #loads ggplot2 package
+library(dplyr) #loads dplyr package
+
+explanatory_data.rda <- read.csv("explanatory_data_rda.csv", sep = ";", header = TRUE) #reads my csv in as a matrix, which is needed for the RDA
+microbial_speciesrichness <- read.csv("microbial_speciesrichness.csv", header=TRUE) #loads in speciesricheness
+rownames(explanatory_data.rda) <- microbial_speciesrichness$X  #set the X (samples) column as rownames
+rownames(microbial_speciesrichness) <- microbial_speciesrichness$X #give the columnname the samplenames
+
+#load in either line 15 or line 16 depending on what dataset you're working with
+#right_samples <- read.csv("field_collected_samples.csv", skip = 6, row.names = NULL, sep = ';', header=F) #load in fieldwork samples
+right_samples <- read.csv("garden_collected_samples.csv", skip = 1, row.names = NULL, sep = ';', header=F) #load in garden experiment samples
+microbial_speciesrichness <- microbial_speciesrichness[microbial_speciesrichness$X %in% right_samples$V1, ] #select the rows that are sampled in the field
+microbial_speciesrichness$X <- NULL #removes the X (samples) column
+
+microbial_taxa <- read.csv("2023-11-22_ragweed_metagenomics_kraken_NCBInt_microbial_species_filtered_overlap_taxonomyData.csv") #I need the taxa in order to give the microbes in the figure a certain colour
+filter_vector <- colnames(microbial_speciesrichness) #assigns colnames of microbial_speciesrichness to a new vector
+filtered_microbial_taxa <- microbial_taxa[microbial_taxa$s %in% filter_vector, ] #selects all the samples in microbial_taxa that overlap with the microbes in microbial_speciesrichness
+explanatory_data.rda <- explanatory_data.rda[rownames(explanatory_data.rda) %in% rownames(microbial_speciesrichness), ]  #same as line above, but for the explanatory variables
+non_filtered_microbial_taxa <- microbial_taxa[!(microbial_taxa$s %in% filter_vector), ] #selects all the samples that aren't in microbial_speciesrichness // I needed this in order to easily look up which microbes where differently named
+microbial_taxa_RDA <- filtered_microbial_taxa[,c(2,8)] #puts the columns for kingdom and speciesname in a new dataframe
+microbial_taxa_RDA$colour <- NA #makes a new column names "colour"
+microbial_taxa_RDA[which(microbial_taxa_RDA$sk == "Bacteria"), ]$colour = "red" #assigns "red" to all the rows which have "Bacteria" in the kingdom row
+microbial_taxa_RDA[which(microbial_taxa_RDA$sk == "Eukaryota"), ]$colour = "green" #assigns "green" to all the rows which have "Eukaryota" in the kingdom row
+microbial_taxa_RDA[which(microbial_taxa_RDA$sk == "Archaea"), ]$colour = "blue" #assigns "blue" to all the rows which have "Archaea" in the kingdom row
+#explanatory_data.rda$latitude <- NULL #load in for working with the garden dataset, since latitude is not important for this dataset
+spec.rda <- rda(as.data.frame(microbial_speciesrichness) ~ ., as.data.frame(explanatory_data.rda)) # runs the rda with the 2 dataframes
+summary(spec.rda) #summarises your data, allowing you to see the result of your RDA
+
+model <- ordiplot(spec.rda, type = "none", scaling = 1, cex=10, xlab = "RDA1", ylab = "RDA2", cex.lab = 1.25) #makes an ordiplot of your RDA, in order to visualize and enable to more clearly analyse your data
+points(spec.rda, col="darkgrey", cex=1) #puts the samples as darkgrey dots on the ordiplot
+points(spec.rda, dis="sp", col=microbial_taxa_RDA$colour) #puts the microbes in the ordiplot with the colours "red""green" and "blue" according to their kingdom
+#text(spec.rda, dis="sp", col="blue")  #labels the microbes with their names // makes the figure hard to read, so only read in if you want to know the microbe representing a dot
+text(spec.rda, dis="bp", col="black") #puts in arrows with the names of the vectors
+
+RsquareAdj(model)$adj.r.squared  #extracts the R² Adjusted value of the model
+anova.cca(model, step=1000)     #calculated the p-value of the dataset
+
+spec.rda1 <- step(spec.rda, scope=formula(spec.rda), test="perm") #This function performs automatic backward elimination of non-significant effects // simplifies the model while keeping the best variables
+summary(spec.rda1)  #summarizes your data
+RsquareAdj(spec.rda1)$adj.r.squared  #extract R² adjusted
+anova.cca(spec.rda1, step=1000)     #calculated p-value
+vif.cca(spec.rda1) #measures correlation between your variables, usually you should ommit values >20
+
+simplyfied_model <- ordiplot(spec.rda1, type = "none", scaling = 1, cex=10, xlab = "RDA1", ylab = "RDA2", cex.lab = 1.25) #makes ordiplot of simplified model
+points(spec.rda1, col="darkgrey", cex=1)
+points(spec.rda1, dis="sp", col=microbial_taxa_RDA$colour)
+#text(spec.rda1, dis="sp", col="blue")
+text(spec.rda1, dis="bp", col="black")
+
+#now for Europe and North-America independently
+explanatory_data.rda <- read.csv("explanatory_data_rda.csv", sep = ";", header = TRUE) #reads my csv in as a matrix, which is needed for the RDA
+microbial_speciesrichness <- read.csv("microbial_speciesrichness.csv", header=TRUE) #loads in speciesricheness
+rownames(explanatory_data.rda) <- microbial_speciesrichness$X #sets X column (species) as rownames
+rownames(microbial_speciesrichness) <- microbial_speciesrichness$X #give the columnname the samplenames
+#Run only line 62 or 63
+right_samples <- read.csv("field_collected_samples.csv", skip = 6, row.names = NULL, sep = ';', header=F) #load in fieldwork samples
+#right_samples <- read.csv("garden_collected_samples.csv", skip = 1, row.names = NULL, sep = ';', header=F) #load in garden experiment samples
+microbial_speciesrichness <- microbial_speciesrichness[microbial_speciesrichness$X %in% right_samples$V1, ] #select the rows that are sampled in the field
+microbial_speciesrichness$X <- NULL #removes the X (samples) column
+
+microbial_taxa <- read.csv("2023-11-22_ragweed_metagenomics_kraken_NCBInt_microbial_species_filtered_overlap_taxonomyData.csv") #I need the taxa in order to give the microbes in the figure a certain colour
+filter_vector <- colnames(microbial_speciesrichness) #assigns colnames of microbial_speciesrichness to a new vector
+filtered_microbial_taxa <- microbial_taxa[microbial_taxa$s %in% filter_vector, ] #selects all the samples in microbial_taxa that overlap with the microbes in microbial_speciesrichness
+explanatory_data.rda <- explanatory_data.rda[rownames(explanatory_data.rda) %in% rownames(microbial_speciesrichness), ] #same as above
+non_filtered_microbial_taxa <- microbial_taxa[!(microbial_taxa$s %in% filter_vector), ] #selects all the samples that aren't in microbial_speciesrichness // I needed this in order to easily look up which microbes where differently named
+
+library(stringr) #loads in stringr library // needed for replacing Europe(Admixed) with Europe later
+sample_data <-read.csv("sample_data_ordered.csv", header = TRUE)  #read in the ordered sample_data
+sample_data <- sample_data[sample_data$sample %in% right_samples$V1, ]
+
+rang = as.data.frame(sample_data$continent)  #new data.frame with just the continent data
+colnames(rang) <- "continent" #replace colname with 'continent'
+rang$continent <- str_replace(rang$continent, "Europe\\(Admixed\\)", "Europe") #replacing Europe(Admixed) with Europe
+rownames(rang) <- rownames(microbial_presence) #set rownames for rang
+rang$continent <- gsub("Europe", 1, rang$continent) #replaces "Europe" with the number 1
+rang$continent <- gsub("North.America", 0, rang$continent) #replaces "North.America" with the number 0
+
+explanatory_data.rda_europe <- explanatory_data.rda[rang$continent == 1, ] #puts explanatory data for european samples in new dataframe
+explanatory_data.rda_north <- explanatory_data.rda[rang$continent == 0, ] #puts explanatory data for north american samples in new dataframe
+microbial_speciesrichness_europe <- microbial_speciesrichness[rang$continent == 1, ] #same as above but for microbial_abundance data
+microbial_speciesrichness_north <- microbial_speciesrichness[rang$continent == 0, ] #same as above but for microbial_abundance data
+microbial_taxa_RDA <- filtered_microbial_taxa[,c(2,8)] #puts the columns for kingdom and speciesname in a new dataframe
+
+microbial_taxa_RDA$colour <- NA #makes a new column named "colour"
+microbial_taxa_RDA[which(microbial_taxa_RDA$sk == "Bacteria"), ]$colour = "red" #assigns "red" to all the rows which have "Bacteria" in the kingdom row
+microbial_taxa_RDA[which(microbial_taxa_RDA$sk == "Eukaryota"), ]$colour = "green" #assigns "green" to all the rows which have "Eukaryota" in the kingdom row
+microbial_taxa_RDA[which(microbial_taxa_RDA$sk == "Archaea"), ]$colour = "blue" #assigns "blue" to all the rows which have "Archaea" in the kingdom row
+explanatory_data.rda_europe$latitude <- NULL #removes latitude column
+explanatory_data.rda_north$latitude <- NULL #removes latitude column
+
+#make sure to only run line 98 or 99 before running the code below
+spec.rda <- rda(as.data.frame(microbial_speciesrichness_europe) ~ ., as.data.frame(explanatory_data.rda_europe)) # runs the rda with the 2 european dataframes
+spec.rda <- rda(as.data.frame(microbial_speciesrichness_north) ~ ., as.data.frame(explanatory_data.rda_north)) # runs the rda with the 2 north american dataframes
+summary(spec.rda) #summarises your data, allowing you to see the result of your RDA
+RsquareAdj(spec.rda)$adj.r.squared #extracts R² adjusted
+anova.cca(spec.rda, step=1000)   #calculates p-value
+
+model <- ordiplot(spec.rda, type = "none", scaling = 1, cex=10, xlab = "RDA1", ylab = "RDA2", cex.lab = 1.25) #makes an ordiplot of your RDA, in order to visualize and enable to more clearly analyse your data
+points(spec.rda, col="darkgrey", cex=1)
+points(spec.rda, dis="sp", col=microbial_taxa_RDA$colour)
+#text(spec.rda, dis="sp", col="blue")
+text(spec.rda, dis="bp", col="black") 
+
+spec.rda1 <- step(spec.rda, scope=formula(spec.rda), test="perm") #This function chooses the best variables to simplify the model
+summary(spec.rda1)
+RsquareAdj(spec.rda1)$adj.r.squared
+anova.cca(spec.rda1, step=1000) 
+
+vif.cca(spec.rda1) #usual value to ommit is any value greater than 20 // in this case no values greater than 20
+
+simplyfied_model <- ordiplot(spec.rda1, type = "none", scaling = 1, cex=10, xlab = "RDA1", ylab = "RDA2", cex.lab = 1.25)
+points(spec.rda1, col="darkgrey", cex=1)
+points(spec.rda1, dis="sp", col=microbial_taxa_RDA$colour)
+#text(spec.rda1, dis="sp", col="blue")
+text(spec.rda1, dis="bp", col="black")
